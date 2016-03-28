@@ -215,6 +215,8 @@ class Actor(object):
         self.found = False
         self.moves = 0
 
+        assert isinstance(self.station, Station)
+
     def move(self):
         """
         Every actor needs to be able to move, ensure this.
@@ -251,7 +253,6 @@ class Person(Actor):
     def __init__(self, cat, *args, **kwargs):
         super(Person, self).__init__(*args, **kwargs)
         self.cat = cat
-        self.cat.person = self  #
         self.previous_locations = {kwargs['station']}
 
         assert isinstance(self.cat, Cat)
@@ -294,6 +295,7 @@ class Person(Actor):
                     if station not in self.previous_locations:  # We haven't been there, lets go there.
                         self.station = station
                         self.previous_locations.add(station)
+                        break
                 else:  # There are no connections we haven't been to.
                     self.station = random.choice(list(self.station.connections))
                 self.moves += 1
