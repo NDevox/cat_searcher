@@ -236,11 +236,14 @@ class Cat(Actor):
         print('Meow')
 
     def move(self):
+        """
+        Cats move randomly. Nothing special.
+        """
         try:
             if not self.stuck:
                 self.station = random.choice(list(self.station.connections))
                 self.moves += 1
-        except IndexError:
+        except IndexError:  # If this errors, it most likely means we are stuck.
             self.stuck = True
 
 
@@ -248,6 +251,7 @@ class Person(Actor):
     def __init__(self, cat, *args, **kwargs):
         super(Person, self).__init__(*args, **kwargs)
         self.cat = cat
+        self.cat.person = self  #
         self.previous_locations = {kwargs['station']}
 
         assert isinstance(self.cat, Cat)
@@ -281,16 +285,19 @@ class Person(Actor):
         return False
 
     def move(self):
+        """
+        Move the person. First try find a connection they haven't been to before. Otherwise move randomly.
+        """
         try:
             if not self.stuck:
                 for station in self.station.connections:
-                    if station not in self.previous_locations:
+                    if station not in self.previous_locations:  # We haven't been there, lets go there.
                         self.station = station
                         self.previous_locations.add(station)
-                else:
+                else:  # There are no connections we haven't been to.
                     self.station = random.choice(list(self.station.connections))
                 self.moves += 1
-        except IndexError:
+        except IndexError:  # If this errors, it most likely means we are stuck.
             self.stuck = True
 
 
@@ -318,14 +325,22 @@ class Station(object):
 
 class Map(object):
     def __init__(self, stations, connections, n_actors):
+        self.total = n_actors
         self.moving_people = set()
         self.moving_cats = set()
         self.lucky_people = set()
 
-        self.map = self.make_map(stations, connections)
+        self.tube_map = self.make_map(stations, connections)
         self.setup_actors(n_actors)
 
     def make_map(self, stations, connections):
+        """
+        Take filenames as input and build the map based on those.
+
+        :param stations: str, filepath to the stations list.
+        :param connections: str, filepath to the connections list.
+        :return: dict, the map of stations
+        """
         tube_map = {}
         with open(stations,'r') as stations, open(connections, 'r') as connections:
             station_reader = csv.reader(stations)
@@ -336,40 +351,60 @@ class Map(object):
             connections_reader = csv.reader(connections)
 
             for station, connection in connections_reader:
+                # There is only a single reference to each connection, instead of two mirrored references.
+                # So we have to add the connections both ways.
                 tube_map[station].connections.add(tube_map[connection])
                 tube_map[connection].connections.add(tube_map[station])
 
         return tube_map
 
     def setup_actors(self, n_actors):
-        for i in range(n_actors):
-            name = random.choice(NAMES) + str(i)  # Add the identifying number
+        """
+        Build the sets of people and cats. Name them and place them randomly.
 
-            cat = Cat(station=random.choice(list(self.map.values())),
+        It is entirely feasible that cats and their owners are placed in the same station.
+        In this case the cat will move before it is found. I have assumed this is ok, otherwise there are a couple of
+        simple lines that could be added to stop this happening.
+
+        :param n_actors: int, number of people/cats we want.
+        """
+        for i in range(n_actors):
+            name = random.choice(NAMES) + str(i)  # Add the identifying number to a random name.
+
+            cat = Cat(station=random.choice(list(self.tube_map.values())),
                       name=name + ' Jr.')
 
-            person =  Person(cat=cat,
-                             station=random.choice(list(self.map.values())),
-                             name=name)
+            person = Person(cat=cat,
+                            station=random.choice(list(self.tube_map.values())),
+                            name=name)
 
             self.moving_people.add(person)
             self.moving_cats.add(cat)
 
     def search(self, moves=100000):
+        """
+        This runs the search algorithm for people and cats. Most of the work is run here.
+
+        :param moves: The number of times each person will try to move before giving up.
+        """
         for _ in range(moves):
             if not self.moving_people:
                 break
 
+            # We can't remove objects from sets as we use them, so we must store for later removal.
             cats_to_be_removed = set()
             people_to_be_removed = set()
 
             for person, cat in zip(self.moving_people, self.moving_cats):
-                if random.randint(1,100000) == 1:
+                # zipping makes this loop a bit more concise. That way it is easier to read. Not convinced there is a
+                # performance benefit (there might be) but conciseness is the main reason.
+
+                if random.randint(1,100000) == 1:  # These are just for a bit of fun. They could easily be removed.
                     cat.speak()
                 elif random.randint(1,100000) == 2:
                     person.speak()
 
-                if not cat.found:
+                if not cat.found:  # Only move if it has not been found - otherwise the owner is holding onto it.
                     cat.move()  # The cat ambles on.
 
                 person.found_cat()  # It is entirely feasible the cat finds the owner first, so check before and after.
@@ -383,31 +418,55 @@ class Map(object):
                     people_to_be_removed.add(person)
 
                 elif person.stuck:
+                    # The person is stuck so we no longer care about the person or cat.
+                    # We could keep the cat moving randomly but I'm assuming this is no longer relevant to the sim.
+                    # So it would be easier to have them removed. Also helps to keep symmetry when zipping.
                     people_to_be_removed.add(person)
+                    cats_to_be_removed.add(person.cat)
 
-                if cat.stuck:
-                    cats_to_be_removed.add(cat)
-
+            # Remove the actors we need to remove.
             for cat in cats_to_be_removed:
                 self.moving_cats.remove(cat)
             for person in people_to_be_removed:
                 self.moving_people.remove(person)
 
-            if not(self.moving_people and self.moving_cats):
+            if not(self.moving_people and self.moving_cats):  # we've run out of movable people.
                 break
+
+    def calc_stats(self):
+        """
+        Some basic calculations for the needed statistics.
+
+        :return: str, printable string holding the stats.
+        """
+        moves = [actor.moves for actor in self.lucky_people]
+        total_cats = self.total
+        num_found = len(moves)
+        avg_moves = sum(moves)/len(moves)
+
+        response = '''Total number of cats: {total_cats}
+Number of cats found: {num_found}
+Average number of moves required to find a cat: {avg_moves}'''.format(total_cats=total_cats,
+                                                                              num_found=num_found,
+                                                                              avg_moves=avg_moves)
+
+        return response
 
 
 def main(stations, connections, n_actors):
+    """
+    Function used to pass in the required filenames and number of cats/people we want to simulate.
 
-    map = Map(stations, connections, n_actors)
+    :param stations: str, filepath to the stations list.
+    :param connections: str, filepath to the connections list.
+    :param n_actors: int, number of cats/people we want to simulate.
+    """
+    tube_map = Map(stations, connections, n_actors)
 
-    map.search()
+    tube_map.search()
 
-    moves = [actor.moves for actor in map.lucky_people]
+    print(tube_map.calc_stats())
 
-    print('Total number of cats: {}'.format(n_actors))
-    print('Number of cats found: {}'.format(len(moves)))
-    print('Average number of moves required to find a cat: {}'.format(sum(moves)/len(moves)))
 
 if __name__ == '__main__':
 
