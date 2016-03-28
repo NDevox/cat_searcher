@@ -42,13 +42,18 @@ class ActorTest(unittest.TestCase):
         self.map = cats.Map('tfl_stations.csv','tfl_connections.csv', 1)
 
     def test_move(self):
+        """
+        A blank actor should raise a NotImplementedError on moving.
+        """
         actor = cats.Actor(list(self.map.tube_map.values())[0],'test_name')
 
         with self.assertRaises(NotImplementedError):
             actor.move()
 
     def test_needs_station(self):
-
+        """
+        An actor not given a proper station should raise an AssertionError.
+        """
         actor = cats.Actor(list(self.map.tube_map.values())[0],'test_name')
 
         with self.assertRaises(AssertionError):
@@ -107,7 +112,7 @@ class PersonTest(unittest.TestCase):
 
         self.person.found_cat()
 
-        for station in self.station.connections:  # Ensure connections are still open.
+        for station in self.person.station.connections:  # Ensure connections are still open.
             self.assertIn(self.person.station, station.connections)
 
         self.person.station = self.station
@@ -124,6 +129,13 @@ class PersonTest(unittest.TestCase):
 
         for station in self.station.connections:  # Ensure connections are killed.
             self.assertNotIn(self.station, station.connections)
+
+    def test_needs_cat(self):
+        """
+        Making a person without a cat should raise an assertion error.
+        """
+        with self.assertRaises(AssertionError):
+            cats.Person('garble', station=self.station, name='test_name')
 
 if __name__ == '__main__':
     unittest.main()
